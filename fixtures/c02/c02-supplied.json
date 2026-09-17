@@ -1,0 +1,83 @@
+{
+  "fixture_id": "c02-supplied",
+  "fixture_version": 1,
+  "source": "Official C02 hackathon challenge starting data",
+  "description": "Verbatim transcription of the supplied C02 jobs, events and rules. Every record is SUPPLIED. A key absent from a record's fields was not supplied and means unknown, not false. Interpretation constraints are documented in docs/architecture/c02-fixture.md.",
+  "jobs": [
+    {
+      "job_id": "W-1",
+      "provenance": "SUPPLIED",
+      "fields": {
+        "stage": "awaiting parts",
+        "part_receipt": "received",
+        "receipt_ref": "R-1",
+        "next_owner": "parts coordinator"
+      }
+    },
+    {
+      "job_id": "W-2",
+      "provenance": "SUPPLIED",
+      "fields": {
+        "stage": "repair paused",
+        "part": "not required",
+        "customer_approval": "missing",
+        "next_owner": "service adviser"
+      }
+    },
+    {
+      "job_id": "W-3",
+      "provenance": "SUPPLIED",
+      "fields": {
+        "stage": "quality check",
+        "device_state": "offline",
+        "next_owner": "workshop controller"
+      }
+    },
+    {
+      "job_id": "W-4",
+      "provenance": "SUPPLIED",
+      "fields": {
+        "stage": "ready",
+        "customer_approval": "received",
+        "next_owner": "collection desk"
+      }
+    }
+  ],
+  "events": [
+    {
+      "event_id": "R-1",
+      "provenance": "SUPPLIED",
+      "fields": {
+        "job_id": "W-1",
+        "event": "part scan",
+        "time": "08:40"
+      }
+    },
+    {
+      "event_id": "E-2",
+      "provenance": "SUPPLIED",
+      "fields": {
+        "job_id": "W-2",
+        "event": "approval request prepared",
+        "time": "08:50"
+      }
+    }
+  ],
+  "rules": [
+    {
+      "rule_id": "RULE 1",
+      "provenance": "SUPPLIED",
+      "text": "Task recommendations require a source record and an owner."
+    },
+    {
+      "rule_id": "RULE 2",
+      "provenance": "SUPPLIED",
+      "text": "Do not create employee performance scores from these events."
+    },
+    {
+      "rule_id": "RULE 3",
+      "provenance": "SUPPLIED",
+      "text": "Writing/updating workflow status requires reviewer approval."
+    }
+  ]
+}
