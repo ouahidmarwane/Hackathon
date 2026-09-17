@@ -18,6 +18,21 @@ pure claim-level findings, explicit evidence links, missing requirements and
 versioned GENERATED output. Findings remain in memory; no M03 migration or UI
 is added. See [the M03 model](docs/architecture/m03-evidence-engine.md).
 
+M04 adds a local Control Tower for product review, driven by persisted Supabase
+records through the existing authenticated CLI and frozen M03 engine. The reader
+is development-only; `npm run dev` binds to loopback. Production access requires
+reviewed server/viewer authentication. See [M04 architecture](docs/architecture/m04-control-tower.md).
+
+M04.2 leads with a connected workshop lifecycle process map, recorded position
+and attached events/grouped gap or conflict markers. Investigate opens evidence
+details; the complete inspector remains below. Template stages are product
+context, not observed history or verified completion. The engine and persisted
+source records are unchanged.
+
+M05 adds structured, evidence-backed investigation guidance using a deterministic
+server provider. It needs no LLM credentials and never changes M03 findings or
+workflow state. See [M05 architecture](docs/architecture/m05-investigation-intelligence.md).
+
 The repository contains:
 
 - the architecture documentation
@@ -26,7 +41,7 @@ The repository contains:
 - a minimal Next.js application shell
 - local operational schema, validated ingestion boundary, and C02 fixture loader
 
-No product features are implemented yet.
+The Control Tower displays deterministic evidence; AI and workflow actions remain deferred.
 
 Stack: Next.js (App Router), TypeScript, Tailwind CSS, Supabase and Vitest.
 

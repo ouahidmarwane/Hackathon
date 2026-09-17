@@ -138,8 +138,11 @@ export function evaluateEvidence(input: EvidenceInput): EvidenceFinding[] {
       missing = ["PART_RECEIPT_CONFIRMATION"];
       if (!scans.length) missing.push("RECEIPT_REFERENCE_RESOLUTION");
     } else if (claim.property === "stage" && claim.value === "awaiting parts") {
-      rule = "PART_HANDOFF_GAP"; related = scans; dependencies = [claim, ...refs];
-      missing = ["STAGE_CONFIRMATION", "PART_TO_JOB_HANDOFF_CONFIRMATION"];
+      rule = "PART_HANDOFF_GAP";
+      const handoffs = input.events.filter(event => event.job_id === claim.job_id && /part.*handoff/i.test(event.event_type));
+      related = [...scans, ...handoffs]; dependencies = [claim, ...refs];
+      missing = ["STAGE_CONFIRMATION"];
+      if (!handoffs.length) missing.push("PART_TO_JOB_HANDOFF_CONFIRMATION");
       if (!scans.length) missing.push("RECEIPT_REFERENCE_RESOLUTION");
     } else if (claim.property === "customer_approval") {
       rule = "APPROVAL_GAP"; related = prepared;

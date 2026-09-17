@@ -1,0 +1,5 @@
+import Link from "next/link";
+import { Icon } from "./icons";
+export function DataState({ kind, configuration = false }: { kind: "error" | "empty"; configuration?: boolean }) {
+  return <section className="data-state" role={kind === "error" ? "alert" : undefined}><span className="data-state-icon"><Icon name={kind === "error" ? "gap" : "cases"} /></span><h1>{kind === "empty" ? "No workshop records available" : configuration ? "Server data access needs configuration" : "Workshop records couldn’t be loaded"}</h1><p>{kind === "empty" ? "The connected source returned no work orders. No example records have been substituted." : configuration ? "A trusted server reader is required before evidence assessments can be displayed." : "The source connection is unavailable or returned records that could not be verified. No assessments are being shown."}</p>{kind === "error" && <Link href="/" prefetch={false} className="primary-button"><Icon name="refresh" />Retry loading records</Link>}<p className="data-state-note">Recorded data and evidence assessments appear only after a successful source read.</p></section>;
+}
