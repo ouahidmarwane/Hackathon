@@ -8,7 +8,10 @@ behind each conclusion, and a human approves every change to workflow state.
 
 ## Status
 
-Milestone M01.5: Repository & Application Bootstrap.
+Milestone M02: Reviewed operational model deployed to the existing Supabase
+project. PostgreSQL regression, C02 source loading, and remote idempotency checks
+passed. Real public configuration and browser/server client initialization are
+verified. The M02 checkpoint includes the reviewed migration and regression tests.
 
 The repository contains:
 
@@ -16,6 +19,7 @@ The repository contains:
 - the supplied C02 data, as a fixture
 - the canonical domain contracts
 - a minimal Next.js application shell
+- local operational schema, validated ingestion boundary, and C02 fixture loader
 
 No product features are implemented yet.
 
@@ -43,6 +47,13 @@ npm run dev                  # http://localhost:3000
 Environment variables are listed in [.env.example](.env.example). Put real
 values only in `.env.local`, which git ignores.
 
+The official Supabase CLI is pinned as a project dev dependency. Use
+`npx --no-install supabase <command>`. Install dependencies with lifecycle scripts
+disabled (`npm install --ignore-scripts`); do not approve the skipped resolver
+script. `supabase/config.toml` is local CLI configuration with automatic seeding
+disabled. Linking state and deployment preparation under `supabase/.temp/`
+are ignored. Remote application remains subject to the reviewed deployment gate.
+
 ## Where to start
 
 | Document | Covers |
@@ -53,7 +64,7 @@ values only in `.env.local`, which git ignores.
 | [docs/architecture/data-provenance.md](docs/architecture/data-provenance.md) | SUPPLIED / SYNTHETIC / GENERATED / HUMAN_VALIDATED, supplied-vs-synthetic policy |
 | [docs/architecture/c02-fixture.md](docs/architecture/c02-fixture.md) | Fixture format, supplied data, interpretation constraints |
 | [docs/architecture/simulation-contract.md](docs/architecture/simulation-contract.md) | Rules the future demo simulator must follow |
-| [docs/architecture/domain-model.md](docs/architecture/domain-model.md) | Proposed relationship model for M02 |
+| [docs/architecture/domain-model.md](docs/architecture/domain-model.md) | M02 schema, ingestion, fixture loading, RLS assumptions, and deferred decisions |
 
 Supplied data: [fixtures/c02/c02-supplied.json](fixtures/c02/c02-supplied.json).
 

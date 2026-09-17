@@ -1,0 +1,6 @@
+# Local CLI identity only. No remote configuration deployment is authorized.
+project_id = "workshop-flow-intelligence"
+
+[db.seed]
+# Fixture loading is explicit after SQL verification, never automatic.
+enabled = false

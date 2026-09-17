@@ -100,6 +100,12 @@ fixture file.
 
 ## Open question
 
+M02 review: no authoritative original source was found in the repository. The
+fixture matches the existing architecture brief/documentation and is unchanged.
+The loader produces 4 jobs, 14 claims, 2 events and 3 preserved rules; see
+[domain-model.md](domain-model.md). Under M02.2 authorization, those source records
+were loaded remotely and verified twice without changes or duplicates.
+
 The fixture was transcribed from the M01 project brief, not from the original
 C02 challenge document, which is not in this repository. It should be checked
 against the original for wording, casing and IDs. If the challenge terms allow

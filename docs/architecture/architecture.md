@@ -58,9 +58,10 @@ Every input enters through one validated event ingestion interface:
 - the future demo simulator ([simulation-contract.md](simulation-contract.md))
 - execution of approved actions (see below)
 
-The interface validates the schema, the provenance and the references, appends
-the records, and triggers reevaluation of the affected jobs. No other component
-writes jobs, claims or events.
+The interface validates the schema, the provenance and the references, and
+appends the records. M02 implements this boundary locally; reevaluation of
+affected jobs is deferred to M03. No other component writes jobs, claims or
+events. See [the M02 implementation decisions](domain-model.md).
 
 ```text
 producer (fixture loader | manual entry | integration | simulator | approved action)
