@@ -7,6 +7,7 @@ import { TowerOverview } from "./tower-overview";
 import { WorkOrdersView } from "./work-orders-view";
 import { EvidenceExplorer } from "./evidence-explorer";
 import { KnowledgeView } from "@/components/memory/knowledge-view";
+import { NovaPipeline } from "@/components/simulator/nova-pipeline";
 
 export function NovaApp({
   data,
@@ -52,7 +53,7 @@ export function NovaApp({
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const rawView = params.get("view") ?? "tower";
-      const validView = ["cases", "evidence", "knowledge"].includes(rawView) ? rawView : "tower";
+      const validView = ["cases", "evidence", "knowledge", "simulation"].includes(rawView) ? rawView : "tower";
       setView(validView);
       const c = params.get("case") ?? "";
       if (c) setSelectedCaseId(c);
@@ -95,9 +96,14 @@ export function NovaApp({
     }
   };
 
+  const handleRunPipeline = () => {
+    setView("simulation");
+    updateUrl("simulation", undefined, caseFilter, searchQuery);
+  };
+
   return (
     <AppShell view={view} onNavigate={handleNavigate} status="loaded">
-      {view === "tower" && <TowerOverview data={data} onSelectCase={handleSelectCase} />}
+      {view === "tower" && <TowerOverview data={data} onSelectCase={handleSelectCase} onRunPipeline={handleRunPipeline} />}
       {view === "cases" && (
         <WorkOrdersView
           data={data}
@@ -112,6 +118,7 @@ export function NovaApp({
       )}
       {view === "evidence" && <EvidenceExplorer data={data} />}
       {view === "knowledge" && <KnowledgeView memories={data.memories ?? []} />}
+      {view === "simulation" && <NovaPipeline />}
     </AppShell>
   );
 }

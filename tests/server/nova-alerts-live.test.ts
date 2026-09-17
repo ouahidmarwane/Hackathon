@@ -3,7 +3,18 @@ import { readFileSync } from "node:fs";
 import { loadOperationalWorkspace } from "@/server/control-tower/loader";
 import { triggerNovaAlert } from "@/server/alerts/actions";
 
-describe("M10 live Telegram delivery verification", () => {
+const hasLiveCredentials = (() => {
+  try {
+    const content = readFileSync(".env.local", "utf8");
+    return /^SUPABASE_SERVICE_ROLE_KEY=.+/m.test(content) && /^TELEGRAM_BOT_TOKEN=.+/m.test(content);
+  } catch {
+    return false;
+  }
+})();
+
+const runLive = process.env.RUN_LIVE_TESTS === "1" && hasLiveCredentials;
+
+describe.skipIf(!runLive)("M10 live Telegram delivery verification", () => {
   let w1JobId: string;
 
   beforeAll(async () => {

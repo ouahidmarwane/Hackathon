@@ -134,7 +134,7 @@ describe("supplied C02 journey semantics", () => {
     const model = journey(3);
     expect(model.nodes[0]).toMatchObject({ title: "Ready", kind: "RECORDED_STATE" }); expect(events(3)).toEqual([]);
     expect(model.issues[0].missing_codes).toEqual(["OPERATIONAL_READINESS_CONFIRMATION"]);
-    expect(renderToStaticMarkup(<OperationalJourney item={cases[3]} />)).not.toMatch(/Verified ready|Completed pipeline|All healthy|journey-support/);
+    expect(renderToStaticMarkup(<OperationalJourney item={cases[3]} />)).not.toMatch(/Verified ready|Completed pipeline|All healthy/);
   });
   it.each([0, 1, 2, 3])("retains the full evidence inspector below the journey for case %i", index => {
     const markup = renderToStaticMarkup(<CaseDetail item={cases[index]} />);

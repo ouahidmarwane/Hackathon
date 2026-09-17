@@ -117,7 +117,7 @@ describe("persisted decision read path", () => {
       await expect(loadOperationalWorkspace(invalidCoreReader)).rejects.toThrow(WorkshopReadError);
     });
 
-    it("regression: live loadOperationalWorkspace returns 4 jobs, 14 claims, 2 events and degrades decisions to []", async () => {
+    it.skipIf(process.env.RUN_LIVE_TESTS !== "1")("regression: live loadOperationalWorkspace returns 4 jobs, 14 claims, 2 events and degrades decisions to []", async () => {
       vi.stubEnv("NODE_ENV", "development");
       vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://hmyftkbcbktoccimkaui.supabase.co");
       try {

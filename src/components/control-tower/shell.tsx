@@ -129,6 +129,16 @@ export function AppShell({
             Evidence
           </Link>
           <Link
+            href="/?view=simulation"
+            onClick={handleNavClick("simulation")}
+            prefetch={false}
+            className={view === "simulation" ? "nav-item active" : "nav-item"}
+            aria-current={view === "simulation" ? "page" : undefined}
+          >
+            <Icon name="star" />
+            Live Pipeline
+          </Link>
+          <Link
             href="/?view=knowledge"
             onClick={handleNavClick("knowledge")}
             prefetch={false}

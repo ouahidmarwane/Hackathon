@@ -666,3 +666,71 @@ body { font-size: 15px; background: #f7fbff; }
 .empty-generic-message svg { width: 32px; height: 32px; color: var(--muted); margin-bottom: 10px; }
 .empty-generic-message h3 { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
 .empty-generic-message p { font-size: 13px; color: #64748b; }
+
+/* M11 — NOVA live pipeline simulation */
+.nova-pipeline { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 28px; max-width: 980px; margin: 0 auto; }
+.nova-pipeline-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.nova-pipeline-hero h1 { font-size: 24px; letter-spacing: -0.03em; line-height: 1.3; }
+.nova-pipeline-hero p { color: var(--muted); font-size: 13px; line-height: 1.7; margin-top: 8px; max-width: 60ch; }
+.nova-pipeline-robot { width: 96px; height: 96px; object-fit: contain; flex-shrink: 0; }
+.nova-pipeline-kicker { font-size: 11px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; color: #0284c7; }
+.nova-pipeline-kicker strong { color: #7c3aed; }
+.nova-run-button { display: inline-flex; align-items: center; gap: 9px; min-height: 48px; padding: 12px 22px; border: 0; border-radius: 10px; background: #0284c7; color: #fff; font-size: 15px; font-weight: 750; cursor: pointer; }
+.nova-run-button:hover:not(:disabled) { background: #0369a1; }
+.nova-run-button:disabled { opacity: 0.6; cursor: default; }
+.nova-pipeline-error { margin-top: 14px; font-size: 12px; color: #b91c1c; }
+.nova-pipeline-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.nova-pipeline-top h1 { font-size: 26px; letter-spacing: -0.03em; }
+.nova-run-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 8px; white-space: nowrap; }
+.nova-status-running { background: #e0f2fe; color: #0369a1; }
+.nova-status-blocked { background: #fef3c7; color: #b45309; }
+.nova-status-completed { background: #dcfce7; color: #15803d; }
+.nova-stages { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); list-style: none; margin: 0 0 24px; padding: 0; gap: 6px; }
+.nova-stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 14px 6px 12px; border: 1px solid var(--line); border-radius: 10px; text-align: center; min-width: 0; }
+.nova-stage-dot { width: 14px; height: 14px; border-radius: 50%; background: #cbd5e1; }
+.nova-stage-label { font-size: 11px; font-weight: 650; color: #64748b; line-height: 1.4; }
+.nova-stage-check { position: absolute; top: 6px; right: 8px; font-size: 11px; color: #16a34a; font-weight: 800; }
+.nova-stage-flag { position: absolute; top: 6px; right: 8px; font-size: 11px; color: #d97706; }
+.nova-stage-completed { border-color: #bbf7d0; background: #f0fdf4; }
+.nova-stage-completed .nova-stage-dot { background: #16a34a; }
+.nova-stage-completed .nova-stage-label { color: #15803d; }
+.nova-stage-current { border-color: #7dd3fc; background: #f0f9ff; box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12); }
+.nova-stage-current .nova-stage-dot { background: #0284c7; }
+.nova-stage-current .nova-stage-label { color: #0369a1; }
+.nova-stage-blocked { border-color: #fde68a; background: #fffbeb; box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.14); }
+.nova-stage-blocked .nova-stage-dot { background: #d97706; }
+.nova-stage-blocked .nova-stage-label { color: #b45309; }
+.nova-stage-future .nova-stage-dot { background: #e2e8f0; }
+.nova-stage-future .nova-stage-label { color: #94a3b8; }
+.nova-pipeline-body { display: flex; flex-direction: column; gap: 16px; }
+.nova-assistant-card { display: flex; gap: 16px; align-items: flex-start; background: #f8fafc; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.nova-assistant-avatar { width: 56px; height: 56px; object-fit: contain; flex-shrink: 0; }
+.nova-assistant-name { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #0284c7; }
+.nova-assistant-message { font-size: 16px; font-weight: 650; color: #0f172a; line-height: 1.6; margin-top: 6px; }
+.nova-assistant-next { font-size: 12px; color: #64748b; margin-top: 8px; line-height: 1.6; }
+.nova-assistant-next strong { color: #334155; }
+.nova-pipeline-actions { display: flex; gap: 10px; }
+.nova-action-button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 11px 20px; border: 0; border-radius: 9px; font-size: 14px; font-weight: 750; cursor: pointer; }
+.nova-action-approve { background: #16a34a; color: #fff; }
+.nova-action-approve:hover:not(:disabled) { background: #15803d; }
+.nova-action-evidence { background: #d97706; color: #fff; }
+.nova-action-evidence:hover:not(:disabled) { background: #b45309; }
+.nova-action-button:disabled { opacity: 0.6; cursor: default; }
+.nova-complete-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; color: #15803d; padding: 11px 18px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 9px; }
+.nova-pipeline-history { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.nova-pipeline-history h3 { font-size: 12px; font-weight: 750; color: #334155; margin-bottom: 10px; }
+.nova-history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.nova-history-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; padding: 7px 10px; background: #f8fafc; border-radius: 7px; }
+.nova-history-transition { color: #0f172a; font-weight: 600; }
+.nova-history-channel { font-size: 10px; font-weight: 750; color: #0284c7; background: #e0f2fe; padding: 2px 7px; border-radius: 5px; }
+.nova-history-provenance { font-size: 10px; color: #15803d; background: #dcfce7; padding: 2px 7px; border-radius: 5px; }
+.nova-history-empty { font-size: 12px; color: var(--muted); }
+@media (max-width: 900px) {
+  .nova-stages { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .nova-pipeline-history { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .nova-pipeline { padding: 20px; }
+  .nova-pipeline-hero { flex-direction: column; align-items: flex-start; }
+  .nova-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

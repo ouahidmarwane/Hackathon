@@ -1,10 +1,21 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { readLinkedSnapshot, normalizeSnapshot } from "@/server/control-tower/loader";
 import { buildPlanForJob } from "@/server/decision/service";
 import { submitHumanDecision } from "@/server/decision/actions";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-describe("live end-to-end M06 approve and correct verification", () => {
+const hasServiceRoleKey = (() => {
+  try {
+    return /^SUPABASE_SERVICE_ROLE_KEY=.+/m.test(readFileSync(".env.local", "utf8"));
+  } catch {
+    return false;
+  }
+})();
+
+const runLive = process.env.RUN_LIVE_TESTS === "1" && hasServiceRoleKey;
+
+describe.skipIf(!runLive)("live end-to-end M06 approve and correct verification", () => {
   let w1JobId: string;
   let w1PlanId: string;
   let suggestedNextStep: string;

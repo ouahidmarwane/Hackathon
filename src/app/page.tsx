@@ -14,7 +14,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
   await connection();
   const params = await searchParams;
   const rawView = single(params.view);
-  const view = ["cases", "evidence", "knowledge"].includes(rawView) ? rawView : "tower";
+  const view = ["cases", "evidence", "knowledge", "simulation"].includes(rawView) ? rawView : "tower";
   let data: TowerView | undefined;
   let configuration = false;
 

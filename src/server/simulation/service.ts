@@ -1,343 +1,409 @@
 import "server-only";
 
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { SupabaseOperationalRepository } from "@/server/ingestion/supabase-repository";
-import { SupabaseDecisionRepository } from "@/server/decision/supabase-repository";
-import { ingestEvent, type ProducerContext } from "@/server/ingestion/events";
-import { recordHumanDecision } from "@/server/decision/service";
-import { loadOperationalSnapshot, loadOperationalWorkspace } from "@/server/control-tower/loader";
 import { evaluateEvidence } from "@/domain/evidence-engine";
-import { DeterministicInvestigationProvider } from "@/server/investigation/provider";
-import type { EventInput, EventRecord, JobRecord, ClaimRecord } from "@/domain/operational-model";
-import type { HumanDecision } from "@/domain/human-decision";
+import { createDeterministicPlan } from "@/server/investigation/provider";
+import type { ClaimRecord, EventRecord, JobRecord } from "@/domain/operational-model";
+import type { InvestigationPlan } from "@/domain/investigation";
 import {
-  type PipelineStage,
-  type SimulationApprovalSource,
-  type PipelineState,
+  INCIDENT_STAGE,
   PIPELINE_STAGES,
-  ALLOWED_TRANSITIONS,
+  SIMULATION_PRODUCER,
+  SIMULATION_SOURCE,
   getNextStage,
+  stageLabel,
+  type ApprovalChannel,
+  type PipelineStage,
+  type PipelineState,
+  type SimulationApprovalRecord,
+  type SimulationClaimRecord,
+  type SimulationEventRecord,
+  type SimulationRunRecord,
 } from "@/domain/pipeline-simulation";
-import { formatTelegramMessage, type NovaAlert } from "@/domain/nova-alert";
+import { simulationIdentity } from "./identity";
+import type { SimulationRepository } from "./repository";
 
 export type TransitionResult =
-  | { ok: true; state: PipelineState; decision?: HumanDecision; event?: EventRecord }
+  | { ok: true; state: PipelineState; approval: SimulationApprovalRecord }
   | { ok: false; error: string; code?: string };
 
-const investigationProvider = new DeterministicInvestigationProvider();
+export type StartResult =
+  | { ok: true; state: PipelineState }
+  | { ok: false; error: string };
 
-// Shared in-memory active simulation run tracker for single active run policy
-let activeRunId: string | null = null;
+/** Demo approval policy: every stage transition requires a human approval.
+ * This is intentionally not a claim about how real workshops operate. */
+const STAGE_MESSAGES: Record<PipelineStage, { message: string }> = {
+  RECEPTION: { message: "Vehicle received." },
+  DIAGNOSIS: { message: "Diagnosis is ready." },
+  PARTS_APPROVAL: { message: "Parts and approval are being checked." },
+  REPAIR: { message: "Repair is ready." },
+  QUALITY_CHECK: { message: "Quality check is ready." },
+  READY: { message: "Vehicle is ready." },
+  COLLECTION: { message: "Vehicle workflow completed." },
+};
 
-/**
- * Gets or creates the active simulation run state by querying the real Supabase snapshot.
- */
-export async function getActiveSimulationState(targetRunId?: string): Promise<PipelineState | null> {
-  const snapshot = await loadOperationalSnapshot();
-  const simJobs = snapshot.jobs.filter((j) => j.external_id.startsWith("SIM-"));
-
-  if (simJobs.length === 0) return null;
-
-  // Pick target run or latest run
-  const job = targetRunId
-    ? simJobs.find((j) => j.external_id === targetRunId || j.id === targetRunId)
-    : simJobs[simJobs.length - 1];
-
-  if (!job) return null;
-
-  const events = snapshot.events.filter((e) => e.job_id === job.id);
-  const claims = snapshot.claims.filter((c) => c.job_id === job.id);
-
-  // Determine stage & status based on append-only events
-  let currentStage: PipelineStage = "RECEPTION";
-  const stageEvents = events.filter((e) => e.event_type.startsWith("stage:"));
-
-  for (const se of stageEvents) {
-    const rawStage = se.event_type.replace("stage:", "").toUpperCase() as PipelineStage;
-    if (PIPELINE_STAGES.includes(rawStage)) {
-      currentStage = rawStage;
-    }
-  }
-
-  const nextStage = getNextStage(currentStage);
-  const hasHandoff = events.some((e) => /part.*handoff/i.test(e.event_type));
-
-  // Incident occurs at PARTS_APPROVAL if handoff event is missing
-  const incidentActive = currentStage === "PARTS_APPROVAL" && !hasHandoff;
-  const isCompleted = currentStage === "COLLECTION";
-
-  const status = isCompleted
-    ? "COMPLETED"
-    : incidentActive
-    ? "WAITING_INCIDENT_RESOLUTION"
-    : "WAITING_APPROVAL";
-
+function toDomainJob(run: SimulationRunRecord): JobRecord {
   return {
-    runId: job.id,
-    externalJobId: job.external_id,
-    currentStage,
-    nextStage,
-    status,
-    incidentActive,
-    incidentType: incidentActive ? "HANDOFF_MISSING" : undefined,
-    createdAt: job.producer, // Stores creation metadata
-    updatedAt: events[events.length - 1]?.occurred_at || new Date().toISOString(),
+    id: run.id,
+    source: SIMULATION_SOURCE,
+    external_id: run.external_id,
+    provenance: "SYNTHETIC",
+    producer: SIMULATION_PRODUCER,
   };
 }
 
-/**
- * Start a new SIMULATION run (e.g., SIM-001, SIM-002).
- */
-export async function startSimulationRun(): Promise<{ ok: true; state: PipelineState } | { ok: false; error: string }> {
-  try {
-    const snapshot = await loadOperationalSnapshot();
-    const existingSims = snapshot.jobs.filter((j) => j.external_id.startsWith("SIM-"));
-    const nextNum = existingSims.length + 1;
-    const externalId = `SIM-${String(nextNum).padStart(3, "0")}`;
+function toDomainClaim(run: SimulationRunRecord, claim: SimulationClaimRecord): ClaimRecord {
+  return {
+    id: claim.id,
+    job_id: run.id,
+    source: SIMULATION_SOURCE,
+    source_record_ref: run.external_id,
+    property: claim.property,
+    value: claim.value,
+    provenance: "SYNTHETIC",
+    producer: SIMULATION_PRODUCER,
+    recorded_at: null,
+    effective_from: null,
+  };
+}
 
-    const client = createSupabaseAdminClient();
+function toDomainEvent(run: SimulationRunRecord, event: SimulationEventRecord): EventRecord {
+  return {
+    id: event.id,
+    job_id: run.id,
+    source: SIMULATION_SOURCE,
+    external_id: event.external_id,
+    event_type: event.event_type,
+    provenance: "SYNTHETIC",
+    producer: SIMULATION_PRODUCER,
+    time_kind: "unknown",
+    occurred_at_raw: null,
+    occurred_at: null,
+  };
+}
 
-    // 1. Create Synthetic Job Record
-    const jobRecord: JobRecord = {
-      id: `job:synthetic:${externalId}`,
-      source: "synthetic:simulation",
-      external_id: externalId,
-      provenance: "SYNTHETIC",
-      producer: new Date().toISOString(),
-    };
+/** Real M03 + M05 evaluation of the simulation's SYNTHETIC evidence. Used only
+ * at the incident stage; it never sets classifications directly. */
+function evaluateGate(
+  run: SimulationRunRecord,
+  claims: SimulationClaimRecord[],
+  events: SimulationEventRecord[],
+): { plan: InvestigationPlan; handoffPresent: boolean; handoffGap: boolean } {
+  const domainClaims = claims.map((claim) => toDomainClaim(run, claim));
+  const domainEvents = events.map((event) => toDomainEvent(run, event));
+  const findings = evaluateEvidence({ claims: domainClaims, events: domainEvents });
+  const plan = createDeterministicPlan({
+    job: toDomainJob(run),
+    claims: domainClaims,
+    events: domainEvents,
+    findings,
+  });
+  const handoffPresent = events.some((event) => event.event_type === "part handoff confirmed");
+  const handoffGap = findings.some((finding) =>
+    finding.missing_evidence.includes("PART_TO_JOB_HANDOFF_CONFIRMATION"),
+  );
+  return { plan, handoffPresent, handoffGap };
+}
 
-    const repo = new SupabaseOperationalRepository(client);
-    await repo.appendJob(jobRecord);
-
-    // 2. Create Initial Synthetic Claims
-    const initialClaims: ClaimRecord[] = [
-      {
-        id: `claim:synthetic:${externalId}:stage`,
-        job_id: jobRecord.id,
-        source: "synthetic:simulation",
-        source_record_ref: "reception_log",
-        property: "stage",
-        value: "reception",
-        provenance: "SYNTHETIC",
-        producer: "NOVA Simulation Engine",
-        recorded_at: new Date().toISOString(),
-        effective_from: null,
-      },
-      {
-        id: `claim:synthetic:${externalId}:part_receipt`,
-        job_id: jobRecord.id,
-        source: "synthetic:simulation",
-        source_record_ref: "parts_requisition",
-        property: "part_receipt",
-        value: "R-SIM",
-        provenance: "SYNTHETIC",
-        producer: "NOVA Simulation Engine",
-        recorded_at: new Date().toISOString(),
-        effective_from: null,
-      },
-      {
-        id: `claim:synthetic:${externalId}:receipt_ref`,
-        job_id: jobRecord.id,
-        source: "synthetic:simulation",
-        source_record_ref: "parts_requisition",
-        property: "receipt_ref",
-        value: "R-SIM",
-        provenance: "SYNTHETIC",
-        producer: "NOVA Simulation Engine",
-        recorded_at: new Date().toISOString(),
-        effective_from: null,
-      },
-    ];
-
-    for (const claim of initialClaims) {
-      await repo.appendClaim(claim);
+function novaCopy(
+  run: SimulationRunRecord,
+  gate: { plan: InvestigationPlan; handoffPresent: boolean; handoffGap: boolean } | null,
+): { novaMessage: string; suggestedNextStep: string } {
+  if (run.current_stage === INCIDENT_STAGE && gate) {
+    if (gate.handoffGap && !gate.handoffPresent) {
+      return {
+        novaMessage:
+          "I need one more piece of evidence. A part event was recorded, but I can't verify that the part reached the job / technician.",
+        suggestedNextStep: gate.plan.suggestedNextAction.text,
+      };
     }
-
-    // 3. Create initial stage event: stage:reception
-    const context: ProducerContext = {
-      kind: "synthetic",
-      source: "synthetic:simulation",
-      producer: "NOVA Simulation Engine",
+    return {
+      novaMessage: "Handoff confirmed. Parts and approval are ready.",
+      suggestedNextStep: "Approve to continue to Repair.",
     };
+  }
+  if (run.run_status === "COMPLETED") {
+    return { novaMessage: "Vehicle workflow completed.", suggestedNextStep: "Workflow complete." };
+  }
+  const next = getNextStage(run.current_stage);
+  return {
+    novaMessage: STAGE_MESSAGES[run.current_stage].message,
+    suggestedNextStep: next
+      ? `Approve to continue to ${stageLabel(next)}.`
+      : "Approve to complete the workflow.",
+  };
+}
 
-    const initialEvent: EventInput = {
-      job: { source: "synthetic:simulation", external_id: externalId },
-      external_id: `EV-SIM-RECEPTION-${externalId}`,
-      event_type: "stage:reception",
-      provenance: "SYNTHETIC",
-      time: { kind: "timestamp", raw: new Date().toISOString() },
+export async function buildPipelineState(
+  repo: SimulationRepository,
+  run: SimulationRunRecord,
+): Promise<PipelineState> {
+  const [claims, events, approvals] = await Promise.all([
+    repo.listClaims(run.id),
+    repo.listEvents(run.id),
+    repo.listApprovals(run.id),
+  ]);
+  const gate = run.current_stage === INCIDENT_STAGE ? evaluateGate(run, claims, events) : null;
+  const copy = novaCopy(run, gate);
+  return {
+    runId: run.id,
+    externalId: run.external_id,
+    currentStage: run.current_stage,
+    nextStage: getNextStage(run.current_stage),
+    stageStatus: run.stage_status,
+    runStatus: run.run_status,
+    incidentActive: run.incident_active,
+    novaMessage: copy.novaMessage,
+    suggestedNextStep: copy.suggestedNextStep,
+    createdAt: run.created_at,
+    updatedAt: run.updated_at,
+    approvals: approvals.map((approval) => ({
+      fromStage: approval.from_stage,
+      toStage: approval.to_stage,
+      channel: approval.channel,
+      createdAt: approval.created_at,
+    })),
+    events: events.map((event) => ({
+      eventType: event.event_type,
+      provenance: event.provenance,
+      createdAt: event.created_at,
+    })),
+  };
+}
+
+export async function getActiveSimulationState(
+  repo: SimulationRepository,
+  targetRunId?: string,
+): Promise<PipelineState | null> {
+  const run = targetRunId ? await repo.getRun(targetRunId) : await repo.getActiveRun();
+  if (!run) return null;
+  return buildPipelineState(repo, run);
+}
+
+/** Creates a new append-safe SYNTHETIC simulation run. Never touches W-1–W-4. */
+export async function startSimulationRun(repo: SimulationRepository): Promise<StartResult> {
+  try {
+    const runNumber = await repo.nextRunNumber();
+    const externalId = `SIM-${String(runNumber).padStart(3, "0")}`;
+    const runId = simulationIdentity("run", externalId);
+    const now = new Date().toISOString();
+    const run: SimulationRunRecord = {
+      id: runId,
+      external_id: externalId,
+      run_number: runNumber,
+      current_stage: "RECEPTION",
+      stage_status: "WAITING_FOR_APPROVAL",
+      run_status: "RUNNING",
+      incident_active: false,
+      created_at: now,
+      updated_at: now,
     };
-
-    await ingestEvent(initialEvent, context, repo);
-    activeRunId = jobRecord.id;
-
-    const state = await getActiveSimulationState(jobRecord.id);
-    if (!state) throw new Error("Failed to initialize pipeline state.");
-
+    const claims: SimulationClaimRecord[] = [
+      { id: simulationIdentity("claim", runId, "stage"), run_id: runId, property: "stage", value: "awaiting parts", provenance: "SYNTHETIC", created_at: now },
+      { id: simulationIdentity("claim", runId, "part_receipt"), run_id: runId, property: "part_receipt", value: "received", provenance: "SYNTHETIC", created_at: now },
+      { id: simulationIdentity("claim", runId, "receipt_ref"), run_id: runId, property: "receipt_ref", value: `R-${externalId}`, provenance: "SYNTHETIC", created_at: now },
+      { id: simulationIdentity("claim", runId, "next_owner"), run_id: runId, property: "next_owner", value: "parts coordinator", provenance: "SYNTHETIC", created_at: now },
+    ];
+    await repo.createRun(run, claims);
+    const state = await getActiveSimulationState(repo, runId);
+    if (!state) return { ok: false, error: "Failed to initialize simulation state." };
     return { ok: true, state };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Failed to start simulation." };
   }
 }
 
-/**
- * Authoritative Server-side Approval & Transition Service.
- * Used by BOTH Web UI and Telegram.
- */
+function receiptRef(run: SimulationRunRecord): string {
+  return `R-${run.external_id}`;
+}
+
+/** Authoritative approval + transition service. Web and Telegram both call
+ * exactly this function; the channel is recorded but never selects a stage. */
 export async function approvePipelineTransition(
+  repo: SimulationRepository,
   runId: string,
-  approvalSource: SimulationApprovalSource,
-  reviewerName = "Workshop Manager",
+  channel: ApprovalChannel,
+  reviewer: string,
 ): Promise<TransitionResult> {
   try {
-    const state = await getActiveSimulationState(runId);
-    if (!state) return { ok: false, error: "Simulation run not found." };
-
-    if (state.status === "COMPLETED") {
-      return { ok: false, error: "Simulation workflow is already completed." };
+    const run = await repo.getRun(runId);
+    if (!run) return { ok: false, error: "Simulation run not found.", code: "NOT_FOUND" };
+    if (run.run_status === "COMPLETED") {
+      return { ok: false, error: "Workflow is already completed.", code: "COMPLETED" };
     }
 
-    if (state.incidentActive) {
+    const from = run.current_stage;
+    const next = getNextStage(from);
+
+    // Incident gate: server-enforced, not merely a disabled button.
+    if (from === INCIDENT_STAGE) {
+      const [claims, events] = await Promise.all([repo.listClaims(run.id), repo.listEvents(run.id)]);
+      const gate = evaluateGate(run, claims, events);
+      if (gate.handoffGap && !gate.handoffPresent) {
+        return {
+          ok: false,
+          error: "Part-to-job handoff is not confirmed. Confirm handoff before approving.",
+          code: "INCIDENT_UNRESOLVED",
+        };
+      }
+    }
+
+    if (run.stage_status !== "WAITING_FOR_APPROVAL") {
       return {
         ok: false,
-        error: "Pipeline is paused due to an unverified evidence gap. Confirm handoff first.",
-        code: "INCIDENT_UNRESOLVED",
+        error: "NOVA cannot continue yet. Required evidence is still missing.",
+        code: "NOT_READY",
       };
     }
 
-    const nextStage = state.nextStage;
-    if (!nextStage) return { ok: false, error: "No valid next stage for transition." };
-
-    const workspace = await loadOperationalWorkspace();
-    const job = workspace.snapshot.jobs.find((j) => j.id === state.runId);
-    if (!job) return { ok: false, error: "Job record not found in workspace." };
-
-    // 1. Recompute current investigation plan & findings for governance verification
-    const claims = workspace.snapshot.claims.filter((c) => c.job_id === job.id);
-    const events = workspace.snapshot.events.filter((e) => e.job_id === job.id);
-    const findings = evaluateEvidence({ claims, events });
-    const plan = await investigationProvider.generate({ job, claims, events, findings });
-
-    // 2. Record HUMAN_VALIDATED decision via official decision repository
-    const client = createSupabaseAdminClient();
-    const decisionRepo = new SupabaseDecisionRepository(client);
-
-    const decisionInput = {
-      jobId: job.id,
-      investigationPlanId: plan.id,
-      decisionType: "APPROVED" as const,
-      selectedNextStep: plan.suggestedNextAction.text,
-      correctionText: `Approved via ${approvalSource}`,
-    };
-
-    const decision = await recordHumanDecision(decisionInput, workspace.snapshot, decisionRepo);
-
-    // 3. Ingest next stage SYNTHETIC event via official M07 ingestion boundary
-    const repo = new SupabaseOperationalRepository(client);
-    const context: ProducerContext = {
-      kind: "synthetic",
-      source: "synthetic:simulation",
-      producer: `NOVA Pipeline Service (${approvalSource})`,
-    };
-
-    const stageEventType = `stage:${nextStage.toLowerCase()}`;
-    const nextEventInput: EventInput = {
-      job: { source: job.source, external_id: job.external_id },
-      external_id: `EV-SIM-${nextStage}-${job.external_id}-${Date.now()}`,
-      event_type: stageEventType,
-      provenance: "SYNTHETIC",
-      time: { kind: "timestamp", raw: new Date().toISOString() },
-    };
-
-    const event = await ingestEvent(nextEventInput, context, repo);
-
-    // If reaching PARTS_APPROVAL, inject the initial part event without handoff to trigger incident!
-    if (nextStage === "PARTS_APPROVAL") {
-      const partReqInput: EventInput = {
-        job: { source: job.source, external_id: job.external_id },
-        external_id: `EV-SIM-PART-REQ-${job.external_id}`,
-        event_type: "part ordered",
-        provenance: "SYNTHETIC",
-        time: { kind: "timestamp", raw: new Date().toISOString() },
-      };
-      await ingestEvent(partReqInput, context, repo);
-
-      // Best effort Telegram Incident Alert
-      try {
-        const { sendTelegramCustomMessage } = await import("@/server/alerts/telegram");
-        await sendTelegramCustomMessage(
-          `⚠️ <b>NOVA — Attention Required</b>\n\n🚗 <b>${job.external_id}</b>\nStage: <b>Parts / Approval</b>\n\nA part order event was recorded, but part-to-job handoff evidence is missing.\n\n<b>NOVA recommends:</b> Verify the part-to-job handoff.`
-        );
-      } catch {
-        // Best effort notification
-      }
+    // Advance or complete with a conditional, race-safe update.
+    let updated: SimulationRunRecord | null;
+    if (next) {
+      updated = await repo.advanceStage(run.id, from, next, "WAITING_FOR_APPROVAL", "RUNNING", false);
     } else {
-      // Send Telegram gate notification for next stage if not collection
-      try {
-        const futureNext = getNextStage(nextStage);
-        if (futureNext) {
-          const { sendTelegramCustomMessage } = await import("@/server/alerts/telegram");
-          await sendTelegramCustomMessage(
-            `🔔 <b>NOVA — Workshop Pipeline</b>\n\n🚗 <b>${job.external_id}</b>\n\nCurrent step:\n<b>${nextStage.replace("_", " ")}</b>\n\nNOVA is ready to continue to:\n<b>${futureNext.replace("_", " ")}</b>\n\nHuman approval required.\nReply <b>approve</b> to continue.`
-          );
-        } else {
-          const { sendTelegramCustomMessage } = await import("@/server/alerts/telegram");
-          await sendTelegramCustomMessage(
-            `🎉 <b>NOVA — Workshop Pipeline Complete</b>\n\n🚗 <b>${job.external_id}</b>\n\nWorkflow completed successfully across all stages!`
-          );
-        }
-      } catch {
-        // Best effort delivery
-      }
+      updated = await repo.completeRun(run.id, from);
     }
 
-    const newState = await getActiveSimulationState(runId);
-    return { ok: true, state: newState || state, decision, event };
+    if (!updated) {
+      const current = await getActiveSimulationState(repo, run.id);
+      if (!current) return { ok: false, error: "Simulation run not found.", code: "NOT_FOUND" };
+      return { ok: false, error: "This step was already approved.", code: "DUPLICATE" };
+    }
+
+    // Record the HUMAN_VALIDATED approval (channel = WEB or TELEGRAM, not provenance).
+    const toStage = next ?? "COMPLETED";
+    const approval: SimulationApprovalRecord = {
+      id: simulationIdentity("approval", run.id, from, toStage),
+      run_id: run.id,
+      from_stage: from,
+      to_stage: toStage,
+      reviewer,
+      channel,
+      provenance: "HUMAN_VALIDATED",
+      created_at: new Date().toISOString(),
+    };
+    await repo.appendApproval(approval);
+
+    // Introduce the incident exactly when the run reaches Parts / Approval.
+    if (next === INCIDENT_STAGE) {
+      await repo.appendEvent({
+        id: simulationIdentity("event", run.id, `part-scan-${receiptRef(run)}`),
+        run_id: run.id,
+        external_id: receiptRef(run),
+        event_type: "part scan",
+        provenance: "SYNTHETIC",
+        created_at: new Date().toISOString(),
+      });
+      await refreshIncidentGate(repo, run.id);
+      void notifyIncident(run.external_id);
+    } else if (next) {
+      void notifyGate(run.external_id, next);
+    } else {
+      void notifyComplete(run.external_id);
+    }
+
+    const state = await getActiveSimulationState(repo, run.id);
+    if (!state) return { ok: false, error: "Failed to refresh simulation state." };
+    return { ok: true, state, approval };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Transition approval failed." };
   }
 }
 
-/**
- * Incident resolution demo action: Confirms part handoff.
- */
-export async function confirmSimulationHandoff(runId: string): Promise<TransitionResult> {
+/** Confirms the handoff by ingesting a SYNTHETIC event, then re-evaluates. */
+export async function confirmSimulationHandoff(
+  repo: SimulationRepository,
+  runId: string,
+): Promise<TransitionResult> {
   try {
-    const state = await getActiveSimulationState(runId);
-    if (!state) return { ok: false, error: "Simulation run not found." };
-
-    const client = createSupabaseAdminClient();
-    const repo = new SupabaseOperationalRepository(client);
-    const context: ProducerContext = {
-      kind: "synthetic",
-      source: "synthetic:simulation",
-      producer: "NOVA Incident Resolver",
-    };
-
-    const handoffEvent: EventInput = {
-      job: { source: "synthetic:simulation", external_id: state.externalJobId },
-      external_id: `SYN-HANDOFF-${state.externalJobId}-${Date.now()}`,
+    const run = await repo.getRun(runId);
+    if (!run) return { ok: false, error: "Simulation run not found.", code: "NOT_FOUND" };
+    if (run.current_stage !== INCIDENT_STAGE) {
+      return { ok: false, error: "No handoff confirmation is needed at this stage.", code: "NOT_READY" };
+    }
+    const now = new Date().toISOString();
+    await repo.appendEvent({
+      id: simulationIdentity("event", run.id, "handoff-confirmed"),
+      run_id: run.id,
+      external_id: `SYN-HANDOFF-${run.external_id}`,
       event_type: "part handoff confirmed",
       provenance: "SYNTHETIC",
-      time: { kind: "timestamp", raw: new Date().toISOString() },
+      created_at: now,
+    });
+    await refreshIncidentGate(repo, run.id);
+    void notifyReady(run.external_id);
+    const state = await getActiveSimulationState(repo, run.id);
+    if (!state) return { ok: false, error: "Failed to refresh simulation state." };
+    return {
+      ok: true,
+      state,
+      approval: {
+        id: simulationIdentity("approval", run.id, run.current_stage, run.current_stage),
+        run_id: run.id,
+        from_stage: run.current_stage,
+        to_stage: run.current_stage,
+        reviewer: "NOVA Incident Resolver",
+        channel: "WEB",
+        provenance: "HUMAN_VALIDATED",
+        created_at: now,
+      },
     };
-
-    const event = await ingestEvent(handoffEvent, context, repo);
-
-    // Send Telegram update
-    try {
-      const { sendTelegramCustomMessage } = await import("@/server/alerts/telegram");
-      await sendTelegramCustomMessage(
-        `✅ <b>NOVA Update</b>\n\n🚗 <b>${state.externalJobId}</b>\nHandoff evidence confirmed. Pipeline is ready for human approval.\n\nReply <b>approve</b> to continue to Repair.`
-      );
-    } catch {
-      // Best effort
-    }
-
-    const updatedState = await getActiveSimulationState(runId);
-    return { ok: true, state: updatedState || state, event };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Failed to confirm handoff." };
   }
 }
 
+async function refreshIncidentGate(repo: SimulationRepository, runId: string): Promise<void> {
+  const run = await repo.getRun(runId);
+  if (!run) return;
+  const [claims, events] = await Promise.all([repo.listClaims(runId), repo.listEvents(runId)]);
+  const gate = evaluateGate(run, claims, events);
+  const blocked = gate.handoffGap && !gate.handoffPresent;
+  await repo.updateRunStatus(
+    runId,
+    blocked ? "WAITING_FOR_EVIDENCE" : "WAITING_FOR_APPROVAL",
+    blocked ? "BLOCKED" : "RUNNING",
+    blocked,
+  );
+}
+
+// Best-effort Telegram side effects. Failure never breaks the workflow.
+async function notifyIncident(externalId: string): Promise<void> {
+  try {
+    const { sendTelegramCustomMessage } = await import("@/server/alerts/telegram");
+    await sendTelegramCustomMessage(
+      `⚠️ <b>NOVA — Attention Required</b>\n\n🚗 <b>${externalId}</b>\nParts / Approval\n\nA part event was recorded, but part-to-job handoff confirmation is missing.\n\nNOVA recommends: Verify the part-to-job handoff.`,
+    );
+  } catch { /* best effort */ }
+}
+
+async function notifyReady(externalId: string): Promise<void> {
+  try {
+    const { sendTelegramCustomMessage } = await import("@/server/alerts/telegram");
+    await sendTelegramCustomMessage(
+      `✅ <b>NOVA Update</b>\n\n🚗 <b>${externalId}</b>\nHandoff confirmed. Ready for human approval.\n\nReply <b>approve</b> to continue to Repair.`,
+    );
+  } catch { /* best effort */ }
+}
+
+async function notifyGate(externalId: string, next: PipelineStage): Promise<void> {
+  try {
+    const { sendTelegramCustomMessage } = await import("@/server/alerts/telegram");
+    const nextLabel = stageLabel(next);
+    const after = getNextStage(next);
+    await sendTelegramCustomMessage(
+      `🔔 <b>NOVA — Workshop Pipeline</b>\n\n🚗 <b>${externalId}</b>\n\nCurrent step:\n<b>${nextLabel}</b>\n\nNext:\n<b>${after ? stageLabel(after) : "Complete"}</b>\n\nStatus: Waiting for your approval.\n\nReply <b>approve</b> to continue.`,
+    );
+  } catch { /* best effort */ }
+}
+
+async function notifyComplete(externalId: string): Promise<void> {
+  try {
+    const { sendTelegramCustomMessage } = await import("@/server/alerts/telegram");
+    await sendTelegramCustomMessage(
+      `🎉 <b>NOVA — Workshop Pipeline Complete</b>\n\n🚗 <b>${externalId}</b>\n\nWorkflow completed across all stages.`,
+    );
+  } catch { /* best effort */ }
+}
+
+export const SIMULATION_STAGES: readonly PipelineStage[] = PIPELINE_STAGES;
