@@ -60,8 +60,13 @@ Every input enters through one validated event ingestion interface:
 
 The interface validates the schema, the provenance and the references, and
 appends the records. M02 implements this boundary locally; reevaluation of
-affected jobs is deferred to M03. No other component writes jobs, claims or
+affected jobs has a pure M03 engine, while automatic invocation remains deferred.
+No other component writes jobs, claims or
 events. See [the M02 implementation decisions](domain-model.md).
+
+The [M03 evidence engine](m03-evidence-engine.md) evaluates immutable normalized
+claim/event snapshots in `src/domain/`. It returns claim-specific GENERATED
+findings; it does not write sources or emit diagnoses, AI explanations or actions.
 
 ```text
 producer (fixture loader | manual entry | integration | simulator | approved action)

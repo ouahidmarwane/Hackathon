@@ -178,4 +178,7 @@ actions, knowledge entries, notifications, authentication and simulation all
 remain deferred. RULE 1/2/3 enforcement for downstream proposals/actions is not
 implemented prematurely. Further remote schema changes require review and
 explicit approval. M02.2 permits commit/push only when all checkpoint gates pass;
-no M03 work is authorized.
+no M03 work was authorized by that checkpoint itself. The subsequent M03 brief
+authorizes local deterministic reconciliation, documented in
+[m03-evidence-engine.md](m03-evidence-engine.md). Findings remain in memory;
+M02 source storage, access controls and migration are unchanged.

@@ -13,6 +13,11 @@ project. PostgreSQL regression, C02 source loading, and remote idempotency check
 passed. Real public configuration and browser/server client initialization are
 verified. The M02 checkpoint includes the reviewed migration and regression tests.
 
+M03 deterministic evidence engine is implemented locally for architecture review:
+pure claim-level findings, explicit evidence links, missing requirements and
+versioned GENERATED output. Findings remain in memory; no M03 migration or UI
+is added. See [the M03 model](docs/architecture/m03-evidence-engine.md).
+
 The repository contains:
 
 - the architecture documentation
